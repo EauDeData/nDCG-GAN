@@ -11,6 +11,12 @@ class Yearbook(torch.utils.data.Dataset):
 
         self.net_size = img_size
         self.files = [base_path + i.strip().split()[0] for i in open(files, 'r').readlines()]
+        self.years_lookup = {}
+        for path in files:
+            year = int(path.split('/')[-1].split('_')[0])
+            if not year in self.years_lookup: self.years_lookup[year] = []
+            self.years_lookup[year].append(path)
+
 
     def read_image(self, path):
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE) / 255
