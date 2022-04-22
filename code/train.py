@@ -24,7 +24,9 @@ def train(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsi
 
     for n, (target, yt, context, yc) in enumerate(data):
 
-        target.to(device), context.to(device)
+
+        target = target.to(device)
+        context = context.to(device)
         yt, yc = yt.float().view(-1).to(device), yc.float().view(-1).to(device)
 
         [optim.zero_grad() for optim in optimizers]
@@ -35,7 +37,7 @@ def train(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsi
 
         dloss = d_loss(fake_chance_generator, true)
         rloss = (r_loss(predicted_year_true.view(-1), yt) + r_loss(predicted_year_fake.view(-1), yc)) *.5
-        ranking_loss = ndcg_loss(ranking, yc) 
+        #ranking_loss = ndcg_loss(ranking, yc) 
 
         generator_loss = w[0] * dloss + w[1] * rloss #+ w[2] * ranking_loss
         generator_loss.backward()
@@ -46,7 +48,7 @@ def train(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsi
         dloss_cumsum_generator += dloss.item()
         generator_cumsum += generator_loss.item()
         rloss_cumsum += rloss.item()
-        ndcg_loss_cumsum += ranking_loss.item()
+        #ndcg_loss_cumsum += ranking_loss.item()
 
 
         # Discriminator loss
@@ -77,7 +79,8 @@ def test(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsiz
     with torch.no_grad():
         for n, (target, yt, context, yc) in enumerate(data):
 
-            target.to(device), context.to(device)
+            target = target.to(device)
+            context = context.to(device)
             yt, yc = yt.float().view(-1).to(device), yc.float().view(-1).to(device)
 
             img, fake_chance_generator, fake_chance_discriminator, true_chance, predicted_year_true, predicted_year_fake, ranking = model(context, target)
@@ -87,7 +90,7 @@ def test(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsiz
 
             dloss = d_loss(fake_chance_generator, true)
             rloss = (r_loss(predicted_year_true.view(-1), yt) + r_loss(predicted_year_fake.view(-1), yc)) *.5
-            ranking_loss = ndcg_loss(ranking, yc) 
+            #ranking_loss = ndcg_loss(ranking, yc) 
 
             generator_loss = w[0] * dloss + w[1] * rloss #+ w[2] * ranking_loss
 
@@ -95,7 +98,7 @@ def test(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsiz
             dloss_cumsum_generator += dloss.item()
             generator_cumsum += generator_loss.item()
             rloss_cumsum += rloss.item()
-            ndcg_loss_cumsum += ranking_loss.item()
+            #ndcg_loss_cumsum += ranking_loss.item()
 
 
             # Discriminator loss
@@ -118,12 +121,13 @@ def test(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsiz
 if __name__ == '__main__':
     device = 'cpu'
     EPOCHES = 1
+    bs = 3
 
     test_data = Yearbook(YEARBOOK_BASE + '/test_F.txt')
     train_data = Yearbook(YEARBOOK_BASE + '/test_M.txt')
     
-    test_loader = torch.utils.data.DataLoader(test_data, batch_size = 2)
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size = 2)
+    test_loader = torch.utils.data.DataLoader(test_data, batch_size = bs, drop_last = True)
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size = bs, num_workers = 2, drop_last = True)
 
     model = nDCG_GAN().to(device)
 
@@ -145,8 +149,8 @@ if __name__ == '__main__':
     ranking_loss = ndcg_loss.DGCLoss()
 
     for i in range(EPOCHES):
-        print(test(model, discriminative_loss, regression_loss, ranking_loss, optimizers, test_loader, device=device))
-        print(train(model, discriminative_loss, regression_loss, ranking_loss, optimizers, train_loader, device = device))
+        print(test(model, discriminative_loss, regression_loss, ranking_loss, optimizers, test_loader, bsize = bs, device=device))
+        print(train(model, discriminative_loss, regression_loss, ranking_loss, optimizers, train_loader, bsize = bs,  device = device))
     print(test(model, discriminative_loss, regression_loss, ranking_loss, optimizers, test_loader, device=device))
 
 

@@ -113,8 +113,10 @@ class nDCG_GAN(nn.Module):
         super(nDCG_GAN, self).__init__()
         self.visual_encoder, self.context_encoder, self.generator = VisualEncoder(), ContextEncoder(), Generator()
         self.discriminator, self.classfier, self.ranking = Discriminator(), Classifier(), RankingEncoder()
+        self.device = 'cpu'
     
     def to(self, device):
+        self.device = device
         self.visual_encoder.to(device), self.context_encoder.to(device), self.generator.to(device), self.discriminator.to(device), self.classfier.to(device), self.ranking.to(device)
         return self
 
