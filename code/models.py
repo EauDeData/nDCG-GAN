@@ -3,8 +3,9 @@ import torch
 import torchvision
 import torch.nn as nn
 import numpy as np
+import torch.nn.functional as F
 
-OUT_BOTTLENECK = 1000
+OUT_BOTTLENECK = 32
 OUT_ENCODERS = 512
 
 class BaseBottleneck(nn.Module):
@@ -15,13 +16,19 @@ class BaseBottleneck(nn.Module):
     def __init__(self) -> None:
 
         super(BaseBottleneck, self).__init__()
-        self.conv = torchvision.models.resnet101(pretrained=1)
+        #torchvision.models.resnet101(pretrained=1)
         self.upchannels = nn.Conv2d(1, 3, 1)
         self.a = nn.ReLU()
+        self.conv = nn.Sequential(nn.Conv2d(3, 8, 4),
+        self.a,
+        nn.Conv2d(8, 16, 8),
+        self.a,
+        nn.Conv2d(16, 32, 8))
 
     def forward(self, x):
         x = self.upchannels(x)
         x = self.conv(x)
+        x = F.adaptive_avg_pool2d(x, (1, 1)).view(x.shape[0], -1)
         return x
 
 class VisualEncoder(BaseBottleneck):
@@ -89,12 +96,12 @@ class Generator(nn.Module):
             nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ngf * 4),
             nn.ReLU(True),
-            nn.Upsample(scale_factor = 2),
+            #nn.Upsample(scale_factor = 2),
 
             nn.ConvTranspose2d( ngf * 4, ngf * 2, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ngf * 2),
             nn.ReLU(True),
-            nn.Upsample(scale_factor = 2),
+            #nn.Upsample(scale_factor = 2),
             nn.ConvTranspose2d( ngf * 2, ngf, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ngf),
             nn.ReLU(True),
@@ -124,7 +131,7 @@ class nDCG_GAN(nn.Module):
 
         context = torch.mean(torch.stack([self.context_encoder(x[i]) for i in range(x.shape[0])]), 1)
         visual = self.visual_encoder(t)
-        input_generator = torch.concat((context, visual), 1)
+        input_generator = torch.cat((context, visual), 1)
         img_generated = self.generator(input_generator)
 
         fake_chance_gGradient = self.discriminator(img_generated)
@@ -150,6 +157,6 @@ if __name__ == '__main__':
 
         print(x.shape, z.shape)
 
-        print(model(z, x))
+        print(model(z, x)[0].shape)
 
         break

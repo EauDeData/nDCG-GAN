@@ -61,7 +61,7 @@ def train(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsi
         dloss_cumsum_discriminator += dloss.item()
 
     invN = 1/(n+1)
-    return invN * dloss_cumsum_generator, invN * dloss_cumsum_discriminator, invN * rloss_cumsum, invN * ndcg_loss_cumsum, invN * generator_cumsum
+    return dloss_cumsum_generator, dloss_cumsum_discriminator, rloss_cumsum, ndcg_loss_cumsum, generator_cumsum
 
 def test(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsize = 2, w = [0.33, 0.33, 0.33], device = 'cuda'):
 
@@ -71,6 +71,7 @@ def test(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsiz
     generator_cumsum = 0
     rloss_cumsum = 0
     ndcg_loss_cumsum = 0
+
 
     true = torch.zeros((bsize, 2)).to(device)
     true[:, 0] = 1
@@ -88,6 +89,9 @@ def test(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsiz
 
             # Generator loss
 
+            #print(fake_chance_generator.shape, true.shape, end = '\r')
+
+            #print(true.shape, fake_chance_generator.shape)
             dloss = d_loss(fake_chance_generator, true)
             rloss = (r_loss(predicted_year_true.view(-1), yt) + r_loss(predicted_year_fake.view(-1), yc)) *.5
             #ranking_loss = ndcg_loss(ranking, yc) 
@@ -103,31 +107,30 @@ def test(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsiz
 
             # Discriminator loss
             fake_chance_discriminator = model.discriminator(fake_chance_discriminator.detach())
-            dloss = (d_loss(fake_chance_discriminator, false) + d_loss(true_chance, true)) * .5
+            dloss = (d_loss(fake_chance_discriminator, false) + d_loss(true_chance, true))
 
             # Verbose variables for generator
             dloss_cumsum_discriminator += dloss.item()
 
             plt.imshow(img[0].squeeze().cpu().numpy(), cmap = 'gray')
             plt.axis('off')
-            plt.savefig(f'/home/adri/Desktop/cvc/nDCG-GAN/code/imgs/{n}.png')
+            plt.savefig(f'/home/adria/Desktop/GAN-nDCG/nDCG-GAN/code/imgs/{n}.png')
             plt.clf()
-            break #TODO: ELIMINAR AIXÒ
 
     invN = 1/(n+1)
-    return invN * dloss_cumsum_generator, invN * dloss_cumsum_discriminator, invN * rloss_cumsum, invN * ndcg_loss_cumsum, invN * generator_cumsum
+    return  dloss_cumsum_generator, dloss_cumsum_discriminator, rloss_cumsum, ndcg_loss_cumsum, generator_cumsum
 
 
 if __name__ == '__main__':
-    device = 'cpu'
-    EPOCHES = 1
-    bs = 3
+    device = 'cuda'
+    EPOCHES = 100
+    bs = 128
 
     test_data = Yearbook(YEARBOOK_BASE + '/test_F.txt')
     train_data = Yearbook(YEARBOOK_BASE + '/test_M.txt')
     
     test_loader = torch.utils.data.DataLoader(test_data, batch_size = bs, drop_last = True)
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size = bs, num_workers = 2, drop_last = True)
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size = bs, num_workers = 4, drop_last = True)
 
     model = nDCG_GAN().to(device)
 
@@ -140,7 +143,7 @@ if __name__ == '__main__':
 
     all = []
     [all.extend(list(x.parameters() )) for x in discriminator]
-    optimizer_discriminator = torch.optim.RMSprop(all, lr = 1e-3) # Actually, we want to train different each part of the model
+    optimizer_discriminator = torch.optim.RMSprop(all, lr = 1e-5) # Actually, we want to train different each part of the model
 
     optimizers = [optimizer_discriminator, optimizer_generator]
 
@@ -148,9 +151,28 @@ if __name__ == '__main__':
     regression_loss = torch.nn.MSELoss()    
     ranking_loss = ndcg_loss.DGCLoss()
 
+    dloss_list = []
+    dloss_list_generator = []
+    rloss_list = []
+
     for i in range(EPOCHES):
-        print(test(model, discriminative_loss, regression_loss, ranking_loss, optimizers, test_loader, bsize = bs, device=device))
-        print(train(model, discriminative_loss, regression_loss, ranking_loss, optimizers, train_loader, bsize = bs,  device = device))
-    print(test(model, discriminative_loss, regression_loss, ranking_loss, optimizers, test_loader, device=device))
+        test_out = test(model, discriminative_loss, regression_loss, ranking_loss, optimizers, test_loader, bsize = bs, device=device)
+        print("Test:", test_out )
+        dloss_list.append(test_out[1])
+        dloss_list_generator.append(test_out[0])
+        rloss_list.append(test_out[2])
+        
+        plt.plot(dloss_list)
+        plt.plot(dloss_list_generator)
+        plt.savefig(f'/home/adria/Desktop/GAN-nDCG/nDCG-GAN/code/dloss.png')
+        plt.clf()
+
+        plt.plot(rloss_list)
+        plt.savefig(f'/home/adria/Desktop/GAN-nDCG/nDCG-GAN/code/rloss.png')
+        plt.clf()
+
+
+        print("Train:", train(model, discriminative_loss, regression_loss, ranking_loss, optimizers, train_loader, bsize = bs,  device = device))
+    print(test(model, discriminative_loss, regression_loss, ranking_loss, optimizers, test_loader,bsize=bs, device=device))
 
 

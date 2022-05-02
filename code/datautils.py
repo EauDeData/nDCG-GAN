@@ -4,10 +4,10 @@ import cv2
 import matplotlib.pyplot as plt
 import random
 
-YEARBOOK_BASE = '/home/adri/Desktop/cvc/data/yearbook/faces_aligned_small_mirrored_co_aligned_cropped_cleaned'
+YEARBOOK_BASE = '/home/adria/Desktop/yearbook/faces_aligned_small_mirrored_co_aligned_cropped_cleaned'
 
 class Yearbook(torch.utils.data.Dataset):
-    def __init__(self, files, img_size = (256, 256), base_path = f"{YEARBOOK_BASE}/") -> None:
+    def __init__(self, files, img_size = (64, 64), base_path = f"{YEARBOOK_BASE}/") -> None:
         super(Yearbook).__init__()
 
         self.net_size = img_size
