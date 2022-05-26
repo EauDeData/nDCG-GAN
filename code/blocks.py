@@ -2,6 +2,31 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+'''
+
+Acknowledgment: All models and its dependencies from this script has been downloaded from: https://github.com/omni-us/research-GANwriting
+
+@misc{https://doi.org/10.48550/arxiv.2003.02567,
+  doi = {10.48550/ARXIV.2003.02567},
+  
+  url = {https://arxiv.org/abs/2003.02567},
+  
+  author = {Kang, Lei and Riba, Pau and Wang, Yaxing and Rusiñol, Marçal and Fornés, Alicia and Villegas, Mauricio},
+  
+  keywords = {Computer Vision and Pattern Recognition (cs.CV), FOS: Computer and information sciences, FOS: Computer and information sciences},
+  
+  title = {GANwriting: Content-Conditioned Generation of Styled Handwritten Word Images},
+  
+  publisher = {arXiv},
+  
+  year = {2020},
+  
+  copyright = {Creative Commons Attribution Share Alike 4.0 International}
+}
+
+ Lei Kang, Pau Riba, Yaxing Wang, Marçal Rusiñol, Alicia Fornés, and Mauricio Villegas
+ 
+'''
 
 class ResBlocks(nn.Module):
     def __init__(self, num_blocks, dim, norm, activation, pad_type):

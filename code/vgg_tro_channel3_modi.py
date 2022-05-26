@@ -2,6 +2,35 @@ import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 from load_data import NUM_CHANNEL
 
+
+'''
+
+Acknowledgment: All models and its dependencies from this script has been downloaded from: https://github.com/omni-us/research-GANwriting
+
+@misc{https://doi.org/10.48550/arxiv.2003.02567,
+  doi = {10.48550/ARXIV.2003.02567},
+  
+  url = {https://arxiv.org/abs/2003.02567},
+  
+  author = {Kang, Lei and Riba, Pau and Wang, Yaxing and Rusiñol, Marçal and Fornés, Alicia and Villegas, Mauricio},
+  
+  keywords = {Computer Vision and Pattern Recognition (cs.CV), FOS: Computer and information sciences, FOS: Computer and information sciences},
+  
+  title = {GANwriting: Content-Conditioned Generation of Styled Handwritten Word Images},
+  
+  publisher = {arXiv},
+  
+  year = {2020},
+  
+  copyright = {Creative Commons Attribution Share Alike 4.0 International}
+}
+
+ Lei Kang, Pau Riba, Yaxing Wang, Marçal Rusiñol, Alicia Fornés, and Mauricio Villegas
+ 
+'''
+
+
+
 model_urls = {
     'vgg19_bn': 'https://download.pytorch.org/models/vgg19_bn-c79401a0.pth',
 }
