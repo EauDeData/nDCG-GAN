@@ -8,7 +8,7 @@ import loss as ndcg_loss
 logfile = open('logfile.txt', 'a+')
 
 
-def train(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsize = 2, w = [0.33, 0.33, 0.33], device = 'cuda'):
+def train(model, d_loss, r_loss, ndcg_loss, optimizers, data,  sch, sch_d, log = logfile, bsize = 2, w = [0.33, 0.33, 0.33], device = 'cuda'):
 
     dloss_cumsum_generator = 0
     dloss_cumsum_discriminator = 0
@@ -41,7 +41,8 @@ def train(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsi
 
         generator_loss = w[0] * dloss + w[1] * rloss #+ w[2] * ranking_loss
         generator_loss.backward()
-        optimizers[1].step()
+        [o.step() for o in optimizers[1:]] # First is discriminator
+        #sch.step(generator_loss)
 
 
         #Verbose variables for generator 
@@ -56,12 +57,13 @@ def train(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsi
         dloss = (d_loss(fake_chance_discriminator, false) + d_loss(true_chance, true)) * .5
         dloss.backward()
         optimizers[0].step()
+        #sch_d.step(dloss)
 
         # Verbose variables for generator
         dloss_cumsum_discriminator += dloss.item()
 
     invN = 1/(n+1)
-    return dloss_cumsum_generator, dloss_cumsum_discriminator, rloss_cumsum, ndcg_loss_cumsum, generator_cumsum
+    return dloss_cumsum_generator, dloss_cumsum_discriminator, rloss_cumsum/n, ndcg_loss_cumsum, generator_cumsum
 
 def test(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsize = 2, w = [0.33, 0.33, 0.33], device = 'cuda'):
 
@@ -118,13 +120,13 @@ def test(model, d_loss, r_loss, ndcg_loss, optimizers, data, log = logfile, bsiz
             plt.clf()
 
     invN = 1/(n+1)
-    return  dloss_cumsum_generator, dloss_cumsum_discriminator, rloss_cumsum, ndcg_loss_cumsum, generator_cumsum
+    return  dloss_cumsum_generator, dloss_cumsum_discriminator, rloss_cumsum/n, ndcg_loss_cumsum, generator_cumsum
 
 
 if __name__ == '__main__':
     device = 'cuda'
-    EPOCHES = 100
-    bs = 128
+    EPOCHES = 100000
+    bs = 32
 
     test_data = Yearbook(YEARBOOK_BASE + '/test_F.txt')
     train_data = Yearbook(YEARBOOK_BASE + '/test_M.txt')
@@ -134,36 +136,51 @@ if __name__ == '__main__':
 
     model = nDCG_GAN().to(device)
 
-    generators = [model.generator, model.visual_encoder, model.context_encoder, model.ranking, model.classfier]
-    discriminator = [model.discriminator]
+    #generators = [model.generator, model.visual_encoder, model.context_encoder, model.ranking, model.classfier]
+    #discriminator = [model.discriminator]
 
-    all = []
-    [all.extend(list(x.parameters() )) for x in generators]
-    optimizer_generator = torch.optim.RMSprop(all, lr = 1e-5) # Actually, we want to train different each part of the model
+    lr_dis = 1 * 5e-5
+    lr_gen = 1 * 5e-5
+    lr_rec = 1 * 1e-5
+    lr_con = lr_rec
+    lr_cla = 1 * 1e-5
 
-    all = []
-    [all.extend(list(x.parameters() )) for x in discriminator]
-    optimizer_discriminator = torch.optim.RMSprop(all, lr = 1e-5) # Actually, we want to train different each part of the model
+    dis_params = list(model.discriminator.parameters())
+    gen_params = list(model.generator.parameters())
+    rec_params = list(model.visual_encoder.parameters())
+    con_params = list(model.context_encoder.parameters())
+    cla_params = list(model.classfier.parameters())
 
-    optimizers = [optimizer_discriminator, optimizer_generator]
+    dis_opt = torch.optim.Adam([p for p in dis_params if p.requires_grad], lr=lr_dis)
+    gen_opt = torch.optim.Adam([p for p in gen_params if p.requires_grad], lr=lr_gen)
+    rec_opt = torch.optim.Adam([p for p in rec_params if p.requires_grad], lr=lr_rec)
+    con_opt = torch.optim.Adam([p for p in con_params if p.requires_grad], lr=lr_rec)
+    cla_opt = torch.optim.Adam([p for p in cla_params if p.requires_grad], lr=lr_cla)
+
+    optimizers = [dis_opt, gen_opt, rec_opt, rec_opt, con_opt, cla_opt]
 
     discriminative_loss = torch.nn.BCELoss()
     regression_loss = torch.nn.MSELoss()    
     ranking_loss = ndcg_loss.DGCLoss()
+    scheduler = None #torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_generator)
+    scheduler_disc = None #torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_discriminator)
+
 
     dloss_list = []
     dloss_list_generator = []
     rloss_list = []
 
     for i in range(EPOCHES):
+        print(f"EPOCH - {i}")
         test_out = test(model, discriminative_loss, regression_loss, ranking_loss, optimizers, test_loader, bsize = bs, device=device)
         print("Test:", test_out )
-        dloss_list.append(test_out[1])
+        dloss_list.append(test_out[1] / 2)
         dloss_list_generator.append(test_out[0])
         rloss_list.append(test_out[2])
         
-        plt.plot(dloss_list)
-        plt.plot(dloss_list_generator)
+        plt.plot(dloss_list, label = 'Classifier (discriminator)')
+        plt.plot(dloss_list_generator, label = 'generator')
+        plt.legend()
         plt.savefig(f'/home/adria/Desktop/GAN-nDCG/nDCG-GAN/code/dloss.png')
         plt.clf()
 
@@ -172,7 +189,7 @@ if __name__ == '__main__':
         plt.clf()
 
 
-        print("Train:", train(model, discriminative_loss, regression_loss, ranking_loss, optimizers, train_loader, bsize = bs,  device = device))
+        print("Train:", train(model, discriminative_loss, regression_loss, ranking_loss, optimizers, train_loader, scheduler, scheduler_disc, bsize = bs,  device = device))
     print(test(model, discriminative_loss, regression_loss, ranking_loss, optimizers, test_loader,bsize=bs, device=device))
 
 

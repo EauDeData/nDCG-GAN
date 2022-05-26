@@ -4,9 +4,50 @@ import torchvision
 import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
+import modules_tro
 
-OUT_BOTTLENECK = 32
+OUT_BOTTLENECK = 512
 OUT_ENCODERS = 512
+
+##############################
+#           U-NET
+##############################
+
+
+class UNetDown(nn.Module):
+    def __init__(self, in_size, out_size=OUT_BOTTLENECK, normalize=True, dropout=0.0):
+        super(UNetDown, self).__init__()
+        model = [nn.Conv2d(in_size, out_size, 4, stride=2, padding=1, bias=False)]
+        if normalize:
+            model.append(nn.BatchNorm2d(out_size, 0.8))
+        model.append(nn.LeakyReLU(0.2))
+        if dropout:
+            model.append(nn.Dropout(dropout))
+
+        self.model = nn.Sequential(*model)
+
+    def forward(self, x):
+        return self.model(x)
+
+
+class UNetUp(nn.Module):
+    def __init__(self, in_size, out_size, dropout=0.0):
+        super(UNetUp, self).__init__()
+        model = [
+            nn.ConvTranspose2d(in_size, out_size, 4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(out_size, 0.8),
+            nn.ReLU(inplace=True),
+        ]
+        if dropout:
+            model.append(nn.Dropout(dropout))
+
+        self.model = nn.Sequential(*model)
+
+    def forward(self, x, skip_input):
+        x = self.model(x)
+        out = torch.cat((x, skip_input), 1)
+        return out
+
 
 class BaseBottleneck(nn.Module):
     '''
@@ -18,17 +59,13 @@ class BaseBottleneck(nn.Module):
         super(BaseBottleneck, self).__init__()
         #torchvision.models.resnet101(pretrained=1)
         self.upchannels = nn.Conv2d(1, 3, 1)
+        self.conv = modules_tro.ImageEncoder()
         self.a = nn.ReLU()
-        self.conv = nn.Sequential(nn.Conv2d(3, 8, 4),
-        self.a,
-        nn.Conv2d(8, 16, 8),
-        self.a,
-        nn.Conv2d(16, 32, 8))
 
     def forward(self, x):
         x = self.upchannels(x)
         x = self.conv(x)
-        x = F.adaptive_avg_pool2d(x, (1, 1)).view(x.shape[0], -1)
+        x = F.adaptive_avg_pool2d(x, (1, 1)).squeeze()
         return x
 
 class VisualEncoder(BaseBottleneck):
@@ -37,7 +74,7 @@ class VisualEncoder(BaseBottleneck):
         self.out = nn.Linear(OUT_BOTTLENECK, OUT_ENCODERS)
 
     def forward(self, x):
-        x = self.a(super(VisualEncoder, self).forward(x))
+        x = super(VisualEncoder, self).forward(x)
         return self.out(x)
     
 
@@ -47,7 +84,7 @@ class ContextEncoder(BaseBottleneck):
         self.out = nn.Linear(OUT_BOTTLENECK, OUT_ENCODERS)
 
     def forward(self, x):
-        x = self.a(super(ContextEncoder, self).forward(x))
+        x = super(ContextEncoder, self).forward(x)
         return self.out(x)
 
 class Discriminator(BaseBottleneck):
@@ -57,7 +94,7 @@ class Discriminator(BaseBottleneck):
         self.a_ = nn.Softmax()
 
     def forward(self, x):
-        x = self.a(super(Discriminator, self).forward(x))
+        x = super(Discriminator, self).forward(x)
         return self.a_(self.out(x))
 
 class Classifier(BaseBottleneck):
@@ -65,6 +102,7 @@ class Classifier(BaseBottleneck):
     def __init__(self) -> None:
         super(Classifier, self).__init__()
         self.out = nn.Linear(OUT_BOTTLENECK, 1)
+        self.a = nn.ReLU()
 
     def forward(self, x):
         x = self.a(super(Classifier, self).forward(x))
@@ -85,33 +123,12 @@ class Generator(nn.Module):
 
     def __init__(self) -> None:
         super(Generator, self).__init__()
-        ngf = 3
-        self.main = nn.Sequential(
-            # input is Z, going into a convolution
-            nn.ConvTranspose2d(OUT_ENCODERS * 2, ngf * 8, 4, 1, 0, bias=False),
-            nn.BatchNorm2d(ngf * 8),
-            nn.ReLU(True),
-            
-
-            nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 4),
-            nn.ReLU(True),
-            #nn.Upsample(scale_factor = 2),
-
-            nn.ConvTranspose2d( ngf * 4, ngf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 2),
-            nn.ReLU(True),
-            #nn.Upsample(scale_factor = 2),
-            nn.ConvTranspose2d( ngf * 2, ngf, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf),
-            nn.ReLU(True),
-
-            nn.ConvTranspose2d( ngf, 1, 4, 2, 1, bias=False),
-        )
+        self.linear = nn.Linear(OUT_ENCODERS * 2, OUT_ENCODERS * 8 * 8)
+        self.main = modules_tro.Decoder( dim=OUT_ENCODERS )
 
     def forward(self, x):
-        x = x.view(x.shape[0], -1, 1, 1)
-        return self.main(x)
+        x = F.relu(self.linear(x))
+        return self.main(x.view(x.shape[0], -1, 8, 8))
 
 
 class nDCG_GAN(nn.Module):
@@ -129,9 +146,11 @@ class nDCG_GAN(nn.Module):
 
     def forward(self, x, t):
 
-        context = torch.mean(torch.stack([self.context_encoder(x[i]) for i in range(x.shape[0])]), 1)
+        context = torch.mean(torch.stack([self.context_encoder(x[i]) for i in range(x.shape[0])]), 1).squeeze()
         visual = self.visual_encoder(t)
-        input_generator = torch.cat((context, visual), 1)
+
+        input_generator = torch.cat((context, visual), -1)
+
         img_generated = self.generator(input_generator)
 
         fake_chance_gGradient = self.discriminator(img_generated)
@@ -141,16 +160,18 @@ class nDCG_GAN(nn.Module):
         predicted_year_true = self.classfier(t)
         predicted_year_fake = self.classfier(img_generated)
 
-        ranking = self.ranking(img_generated)
+        #ranking = self.ranking(img_generated)
 
-        return img_generated, fake_chance_gGradient, img_generated, true_chance, predicted_year_true, predicted_year_fake, ranking
+        return img_generated, fake_chance_gGradient, img_generated, true_chance, predicted_year_true, predicted_year_fake, None
         
 if __name__ == '__main__':
+
+
 
     from datautils import *
     data = Yearbook(YEARBOOK_BASE + '/test_F.txt')
     model = nDCG_GAN()
-    loader = torch.utils.data.DataLoader(data, batch_size = 1)
+    loader = torch.utils.data.DataLoader(data, batch_size = 2)
 
 
     for x, y, z, yz in loader:
